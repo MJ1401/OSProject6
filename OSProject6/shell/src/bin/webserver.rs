@@ -24,7 +24,6 @@ fn handle_client(mut stream: TcpStream, streaming_flag: bool, total: &Arc<Mutex<
     println!("{}", s);
 
     let mut response = String::new();
-
     // Gets the file path request 
     let file_request = get_requested_file(&s);
     let cur_dir = std::env::current_dir().unwrap();
@@ -44,7 +43,29 @@ fn handle_client(mut stream: TcpStream, streaming_flag: bool, total: &Arc<Mutex<
         response = format!("HTTP/1.1 404 Not Found\r\n\r\n<html><body><h1>404 Not Found: The requested file is a directory</h1></body></html>"); 
     } else if file_path.is_file() {
         if streaming_flag {
-            // This is where I would do part 2 for streaming TODO
+            println!("IM STREAMING HERE");
+            let mut total = total.lock().unwrap(); 
+            *total += 1;
+            let mut file = std::fs::File::open(&file_path).unwrap();
+            let mut file_buffer = [0; 1024];
+            response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+            loop {
+                match file.read(&mut file_buffer) {
+                    Ok(0) => { // Last pieces of info. Break out of loop
+                        response.push_str("0\r\n\r\n");
+                        break;
+                    },
+                    Ok(bytes) => {
+                        response.push_str(&format!("{:x}\r\n", bytes));
+                        response.push_str(&String::from_utf8_lossy(&buffer[..bytes]));
+                        response.push_str("\r\n");
+                    },
+                    Err(e) => { // Something went wrong
+                        println!("{}", e);
+                        return;
+                    }
+                }
+            }
         } else {
             let mut total = total.lock().unwrap();
             *total += 1;
@@ -84,7 +105,7 @@ fn handle_client(mut stream: TcpStream, streaming_flag: bool, total: &Arc<Mutex<
 }
 
 fn main() -> std::io::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:8887")?;
+    let listener = TcpListener::bind("127.0.0.1:8888")?;
     let args: Vec<String> = env::args().collect();
     let streaming_flag = args.contains(&String::from("-s")); // Checks if there is a streaming flag
     let total_requests = Arc::new(Mutex::new(0)); // Tracks total_requests
